@@ -1,3 +1,4 @@
 vfstyle_backend/obj
 vfstyle_backend/bin
 vfstyle_backend/.vs
+.env
