@@ -77,7 +77,7 @@ namespace vfstyle_backend.Controllers
             var user = await _userManager.FindByEmailAsync(model.Email);
 
             if (user == null)
-                return Unauthorized("Email hoặc mật khẩu không đúng...");
+                return Unauthorized("Email hoặc mật khẩu không đúng...test");
 
             var result = await _signInManager.CheckPasswordSignInAsync(user, model.Password, false);
 
