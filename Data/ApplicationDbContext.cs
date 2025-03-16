@@ -1,60 +1,40 @@
 ﻿using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using vfstyle_backend.Models.Domain;
+using vfstyle_backend.Models;
 
 namespace vfstyle_backend.Data
 {
-    public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
+    public class ApplicationDbContext : DbContext
     {
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
         {
         }
-
-        public DbSet<Product> Products { get; set; }
-        public DbSet<Category> Categories { get; set; }
-        public DbSet<CustomerPreference> CustomerPreferences { get; set; }
-        public DbSet<ProductRecommendation> ProductRecommendations { get; set; }
-        public DbSet<Conversation> Conversations { get; set; }
-        public DbSet<Message> Messages { get; set; }
-
-        protected override void OnModelCreating(ModelBuilder builder)
+        
+        public DbSet<Account> Accounts { get; set; }
+        public DbSet<Role> Roles { get; set; }
+        public DbSet<UserRole> UserRoles { get; set; }
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            base.OnModelCreating(builder);
+            base.OnModelCreating(modelBuilder);
+            
+            modelBuilder.Entity<Account>()
+                .HasIndex(a => a.Username)
+                .IsUnique();
+                
+            modelBuilder.Entity<Account>()
+                .HasIndex(a => a.Email)
+                .IsUnique();
 
-            // Configure relationships
-            builder.Entity<CustomerPreference>()
-                .HasOne(p => p.User)
-                .WithMany(u => u.CustomerPreferences)
-                .HasForeignKey(p => p.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            builder.Entity<ProductRecommendation>()
-                .HasOne(r => r.User)
-                .WithMany(u => u.ProductRecommendations)
-                .HasForeignKey(r => r.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            builder.Entity<ProductRecommendation>()
-                .HasOne(r => r.Product)
-                .WithMany(p => p.ProductRecommendations)
-                .HasForeignKey(r => r.ProductId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            builder.Entity<Product>()
-                .HasOne(p => p.Category)
-                .WithMany(c => c.Products)
-                .HasForeignKey(p => p.CategoryId);
-
-            builder.Entity<Conversation>()
-                .HasOne(c => c.User)
-                .WithMany(u => u.Conversations)
-                .HasForeignKey(c => c.UserId);
-
-            builder.Entity<Message>()
-                .HasOne(m => m.Conversation)
-                .WithMany(c => c.Messages)
-                .HasForeignKey(m => m.ConversationId);
+            modelBuilder.Entity<UserRole>()
+                .HasOne(ur => ur.Account)
+                .WithMany(a => a.UserRoles)
+                .HasForeignKey(ur => ur.AccountId);
+                
+            modelBuilder.Entity<UserRole>()
+                .HasOne(ur => ur.Role)
+                .WithMany(r => r.UserRoles)
+                .HasForeignKey(ur => ur.RoleId);                
         }
     }
 }

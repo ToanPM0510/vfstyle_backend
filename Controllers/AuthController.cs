@@ -1,9 +1,15 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using Google.Apis.Auth;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using System.Web;
-using vfstyle_backend.Models.Domain;
-using vfstyle_backend.Models.DTOs;
-using vfstyle_backend.Services.Auth;
+using Microsoft.EntityFrameworkCore;
+using System;
+using System.Text.Json;
+using System.Threading.Tasks;
+using vfstyle_backend.Data;
+using vfstyle_backend.DTOs;
+using vfstyle_backend.Helpers;
+using vfstyle_backend.Models;
+using vfstyle_backend.Services;
 
 namespace vfstyle_backend.Controllers
 {
@@ -11,164 +17,233 @@ namespace vfstyle_backend.Controllers
     [ApiController]
     public class AuthController : ControllerBase
     {
-        private readonly UserManager<ApplicationUser> _userManager;
-        private readonly SignInManager<ApplicationUser> _signInManager;
-        private readonly JwtService _jwtService;
+        private readonly AuthService _authService;
+        private readonly ApplicationDbContext _context;
         private readonly EmailService _emailService;
-        private readonly IConfiguration _configuration;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public AuthController(
-            UserManager<ApplicationUser> userManager,
-            SignInManager<ApplicationUser> signInManager,
-            JwtService jwtService,
-            EmailService emailService,
-            IConfiguration configuration)
+        public AuthController(AuthService authService, ApplicationDbContext context, 
+            EmailService emailService, IHttpContextAccessor httpContextAccessor)
         {
-            _userManager = userManager;
-            _signInManager = signInManager;
-            _jwtService = jwtService;
+            _authService = authService;
+            _context = context;
             _emailService = emailService;
-            _configuration = configuration;
-        }
-
-        [HttpPost("register")]
-        public async Task<IActionResult> Register([FromBody] RegisterDto model)
-        {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            if (model.Password != model.ConfirmPassword)
-                return BadRequest("Mật khẩu xác nhận không khớp.");
-
-            var user = new ApplicationUser
-            {
-                UserName = model.Email,
-                Email = model.Email,
-                FirstName = model.FirstName,
-                LastName = model.LastName,
-                EmailVerified = false
-            };
-
-            var result = await _userManager.CreateAsync(user, model.Password);
-
-            if (!result.Succeeded)
-                return BadRequest(result.Errors);
-
-            // Gửi email xác nhận
-            var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            var encodedToken = HttpUtility.UrlEncode(token);
-            var confirmationLink = $"{_configuration["AppUrl"]}/confirm-email?email={user.Email}&token={encodedToken}";
-
-            await _emailService.SendEmailAsync(
-                user.Email,
-                "Xác nhận tài khoản",
-                $"Vui lòng xác nhận tài khoản của bạn bằng cách nhấp vào liên kết sau: {confirmationLink}"
-            );
-
-            return Ok(new { message = "Đăng ký thành công. Vui lòng kiểm tra email để xác nhận tài khoản." });
+            _httpContextAccessor = httpContextAccessor;
         }
 
         [HttpPost("login")]
-        public async Task<IActionResult> Login([FromBody] LoginDto model)
+        public async Task<IActionResult> Login([FromBody] LoginDTO loginDTO)
         {
             if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            var user = await _userManager.FindByEmailAsync(model.Email);
-
-            if (user == null)
-                return Unauthorized("Email hoặc mật khẩu không đúng...test");
-
-            var result = await _signInManager.CheckPasswordSignInAsync(user, model.Password, false);
-
-            if (!result.Succeeded)
-                return Unauthorized("Email hoặc mật khẩu không đúng.");
-
-            if (!user.EmailVerified)
-                return Unauthorized("Tài khoản chưa được xác nhận. Vui lòng kiểm tra email của bạn.");
-
-            var roles = await _userManager.GetRolesAsync(user);
-            var token = _jwtService.GenerateJwtToken(user, roles);
-
-            return Ok(new
             {
-                token,
-                user = new
+                return BadRequest(ModelState);
+            }
+            
+            var account = await _context.Accounts.FirstOrDefaultAsync(a => a.Username == loginDTO.Username);
+            
+            if (account == null)
+            {
+                return BadRequest("Tài khoản không tồn tại.");
+            }
+            else if (account.DeletedAt != null)
+            {
+                return BadRequest("Tài khoản đã bị cấm vĩnh viễn.");
+            }
+            else if (account.Status == "Inactive")
+            {
+                return BadRequest("Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ admin để tái kích hoạt.");
+            }
+            
+            if (PasswordHelper.VerifyPassword(loginDTO.Password, account.PasswordHash))
                 {
-                    id = user.Id,
-                    email = user.Email,
-                    firstName = user.FirstName,
-                    lastName = user.LastName
+                    var token = await _authService.GenerateJwtToken(account, _context);
+                    return Ok(new { token, account });
                 }
-            });
+            
+            return Unauthorized("Thông tin xác thực không hợp lệ.");
+        }
+
+        [HttpPost("register")]
+        public async Task<IActionResult> RegisterAsync([FromBody] RegisterDTO registerDTO)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+            
+            if (await _context.Accounts.AnyAsync(a => a.Username == registerDTO.Username || a.Email == registerDTO.Email))
+            {
+                return BadRequest("Tên đăng nhập hoặc email đã tồn tại.");
+            }
+
+            var account = new Account
+            {
+                Username = registerDTO.Username,
+                Email = registerDTO.Email,
+                PasswordHash = PasswordHelper.ToHashPassword(registerDTO.Password),
+                EmailVerified = false
+            };
+
+            string verificationCode = _authService.GenerateCode();
+
+            _httpContextAccessor.HttpContext.Session.SetString("VerificationCode", verificationCode);
+            _httpContextAccessor.HttpContext.Session.SetString("Account", JsonSerializer.Serialize(account));
+
+            try
+            {
+                string emailBody = $@"
+                    <p>Cảm ơn bạn vì đã đăng ký mở tài khoản. Mã xác thực của bạn là:</p>
+                    <h2>{verificationCode}</h2>
+                ";
+
+                await _emailService.SendEmailAsync(registerDTO.Email, $"Mã xác thực của bạn là: {verificationCode}", emailBody);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, "Không thể gửi email xác thực.");
+            }
+
+            return Ok(new { message = "Đăng ký thành công, email xác thực đã được gửi. Vui lòng kiểm tra hộp thư của bạn." });
+        }
+
+        [HttpPost("verify")]
+        public async Task<IActionResult> VerifyCode([FromBody] string verifyCode)
+        {
+            var storedVerificationCode = _httpContextAccessor.HttpContext.Session.GetString("VerificationCode");
+            var storedAccount = _httpContextAccessor.HttpContext.Session.GetString("Account");
+            
+            if (string.IsNullOrEmpty(storedVerificationCode) || string.IsNullOrEmpty(storedAccount))
+            {
+                return BadRequest("Phiên xác thực đã hết hạn. Vui lòng đăng ký lại.");
+            }
+            
+            var account = JsonSerializer.Deserialize<Account>(storedAccount);
+            
+            if (verifyCode != storedVerificationCode)
+            {
+                return BadRequest("Mã xác minh không hợp lệ.");
+            }
+
+            account.EmailVerified = true;
+            _context.Accounts.Add(account);
+            await _context.SaveChangesAsync();
+
+            var token = await _authService.GenerateJwtToken(account, _context);
+
+            _httpContextAccessor.HttpContext.Session.Clear();
+
+            return Ok(new { token, account });
         }
 
         [HttpPost("forgot-password")]
-        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto model)
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotDTO forgotDTO)
         {
             if (!ModelState.IsValid)
+            {
                 return BadRequest(ModelState);
-
-            var user = await _userManager.FindByEmailAsync(model.Email);
-
-            if (user == null)
-                return Ok(new { message = "Nếu email tồn tại, chúng tôi đã gửi hướng dẫn đặt lại mật khẩu." });
-
-            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-            var encodedToken = HttpUtility.UrlEncode(token);
-            var resetLink = $"{_configuration["AppUrl"]}/reset-password?email={user.Email}&token={encodedToken}";
-
-            await _emailService.SendEmailAsync(
-                user.Email,
-                "Đặt lại mật khẩu",
-                $"Để đặt lại mật khẩu của bạn, vui lòng nhấp vào liên kết sau: {resetLink}"
-            );
-
-            return Ok(new { message = "Nếu email tồn tại, chúng tôi đã gửi hướng dẫn đặt lại mật khẩu." });
+            }
+            
+            var account = await _context.Accounts.FirstOrDefaultAsync(a => a.Email == forgotDTO.Email);
+            
+            if (account == null)
+            {
+                return BadRequest("Email không tồn tại.");
+            }
+            else if (account.DeletedAt != null)
+            {
+                return BadRequest("Email đã bị cấm vĩnh viễn.");
+            }
+            else if (account.Status == "Inactive")
+            {
+                return BadRequest("Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ admin để tái kích hoạt.");
+            }
+            
+            string newPassword = PasswordHelper.RandomPassword();
+            account.PasswordHash = PasswordHelper.ToHashPassword(newPassword);
+            account.UpdatedAt = DateTime.UtcNow;
+            
+            await _context.SaveChangesAsync();
+            
+            try
+            {
+                string emailBody = $@"
+                    <p>Mật khẩu mới của bạn là:</p>
+                    <h2>{newPassword}</h2>
+                ";
+                await _emailService.SendEmailAsync(forgotDTO.Email, "Mật khẩu mới của bạn", emailBody);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, "Không thể gửi email chứa mật khẩu mới.");
+            }
+            
+            return Ok(new { message = "Mật khẩu mới đã được gửi đến email của bạn." });
         }
 
-        [HttpPost("reset-password")]
-        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto model)
+        [HttpPost("login/google")]
+        public async Task<IActionResult> GoogleLogin([FromBody] GoogleRequest request)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
+            try
+            {
+                var payload = await GoogleJsonWebSignature.ValidateAsync(request.Token);
+                var user = await _context.Accounts.FirstOrDefaultAsync(a => a.Email == payload.Email);
+                
+                if (user == null)
+                {
+                    return Unauthorized("Đăng nhập với Google không thành công. Tài khoản Email không tồn tại.");
+                }
+                else if (user.DeletedAt != null)
+                {
+                    return Unauthorized("Đăng nhập với Google không thành công. Tài khoản đã bị cấm vĩnh viễn.");
+                }
+                else if (user.Status == "Inactive")
+                {
+                    return Unauthorized("Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ admin để tái kích hoạt.");
+                }
+                
+                var token = await _authService.GenerateJwtToken(user, _context);
 
-            if (model.NewPassword != model.ConfirmPassword)
-                return BadRequest("Mật khẩu xác nhận không khớp.");
-
-            var user = await _userManager.FindByEmailAsync(model.Email);
-
-            if (user == null)
-                return BadRequest("Không tìm thấy người dùng.");
-
-            var result = await _userManager.ResetPasswordAsync(user, model.Token, model.NewPassword);
-
-            if (!result.Succeeded)
-                return BadRequest(result.Errors);
-
-            return Ok(new { message = "Đặt lại mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới." });
+                return Ok(new { token, user });
+            }
+            catch (Exception ex)
+            {
+                return Unauthorized("Đăng nhập với Google không thành công: " + ex.Message);
+            }
         }
 
-        [HttpGet("confirm-email")]
-        public async Task<IActionResult> ConfirmEmail([FromQuery] string email, [FromQuery] string token)
+        [HttpPost("register/google")]
+        public async Task<IActionResult> GoogleRegister([FromBody] GoogleRequest request)
         {
-            if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(token))
-                return BadRequest("Email hoặc token không hợp lệ.");
+            try
+            {
+                var payload = await GoogleJsonWebSignature.ValidateAsync(request.Token);
 
-            var user = await _userManager.FindByEmailAsync(email);
+                var user = await _context.Accounts.FirstOrDefaultAsync(a => a.Email == payload.Email);
 
-            if (user == null)
-                return BadRequest("Không tìm thấy người dùng.");
+                if (user != null)
+                {
+                    return BadRequest("Đăng ký với Google không thành công. Email đã đăng ký.");
+                }
 
-            var result = await _userManager.ConfirmEmailAsync(user, token);
+                user = new Account
+                {
+                    Username = payload.Email.Split('@')[0],
+                    Email = payload.Email,
+                    PasswordHash = PasswordHelper.ToHashPassword(PasswordHelper.RandomPassword()),
+                    EmailVerified = true // Đã xác minh qua Google
+                };
+                
+                _context.Accounts.Add(user);
+                await _context.SaveChangesAsync();
+                
+                var token = await _authService.GenerateJwtToken(user, _context);
 
-            if (!result.Succeeded)
-                return BadRequest("Xác nhận email không thành công.");
-
-            user.EmailVerified = true;
-            await _userManager.UpdateAsync(user);
-
-            return Ok(new { message = "Xác nhận email thành công. Bạn có thể đăng nhập ngay bây giờ." });
+                return Ok(new { token, user });
+            }
+            catch (Exception ex)
+            {
+                return Unauthorized("Đăng ký với Google không thành công: " + ex.Message);
+            }
         }
     }
 }
