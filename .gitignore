@@ -2,3 +2,5 @@ obj
 bin
 .vs
 .env
+/appsettings.json
+/appsettings.Development.json
