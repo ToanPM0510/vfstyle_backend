@@ -105,10 +105,19 @@ namespace vfstyle_backend.Controllers
 
             return Ok(new { message = "Đăng ký thành công, email xác thực đã được gửi. Vui lòng kiểm tra hộp thư của bạn." });
         }
-
-        [HttpPost("verify")]
-        public async Task<IActionResult> VerifyCode([FromBody] string verifyCode)
+        public class VerifyCodeRequest
         {
+            [Required(ErrorMessage = "Mã xác thực là bắt buộc")]
+            public string VerifyCode { get; set; }
+        }
+        [HttpPost("verify")]
+        public async Task<IActionResult> VerifyCode([FromBody] VerifyCodeRequest request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+            
             var storedVerificationCode = _httpContextAccessor.HttpContext.Session.GetString("VerificationCode");
             var storedAccount = _httpContextAccessor.HttpContext.Session.GetString("Account");
             
