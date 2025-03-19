@@ -49,10 +49,14 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", builder =>
     {
-        builder.WithOrigins("http://localhost:5173", "https://vfstyle.id.vn")
-               .AllowCredentials()
+        builder.WithOrigins(
+                    "http://localhost:5173",
+                    "https://vfstyle.id.vn",
+                    "https://vfstyle-fcb8d4e2b9b9g9hy.southeastasia-01.azurewebsites.net"
+                )
                .AllowAnyMethod()
-               .AllowAnyHeader();
+                .AllowCredentials()
+                .AllowAnyHeader();
     });
 });
 
