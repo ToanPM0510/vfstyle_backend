@@ -1,3 +1,9 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using vfstyle_backend.Data;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -34,10 +40,6 @@ builder.Services.AddSession(options =>
 builder.Services.AddHttpContextAccessor();
 
 // Register Services
-builder.Services.AddScoped<AuthService>();
-builder.Services.AddScoped<EmailService>();
-builder.Services.AddScoped<ILLMService, GeminiService>();
-builder.Services.AddScoped<IChatbotService, ChatbotService>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
