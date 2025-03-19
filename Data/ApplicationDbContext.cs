@@ -16,6 +16,9 @@ namespace vfstyle_backend.Data
         public DbSet<UserRole> UserRoles { get; set; }
         public DbSet<Category> Categories { get; set; }
         public DbSet<Product> Products { get; set; }
+        public DbSet<Conversation> Conversations { get; set; }
+        public DbSet<Message> Messages { get; set; }
+        public DbSet<CustomerPreference> CustomerPreferences { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -47,6 +50,24 @@ namespace vfstyle_backend.Data
             modelBuilder.Entity<Product>()
                 .HasIndex(p => p.SKU)
                 .IsUnique();
+
+            modelBuilder.Entity<Conversation>()
+                .HasOne(c => c.Account)
+                .WithMany()
+                .HasForeignKey(c => c.AccountId)
+                .OnDelete(DeleteBehavior.SetNull);
+                
+            modelBuilder.Entity<Message>()
+                .HasOne(m => m.Conversation)
+                .WithMany(c => c.Messages)
+                .HasForeignKey(m => m.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<CustomerPreference>()
+                .HasOne(cp => cp.Account)
+                .WithMany()
+                .HasForeignKey(cp => cp.AccountId)
+                .OnDelete(DeleteBehavior.SetNull);                
         }
     }
 }

@@ -41,17 +41,25 @@ builder.Services.AddHttpContextAccessor();
 // Register Services
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<EmailService>();
-
+builder.Services.AddScoped<ILLMService, GeminiService>();
+builder.Services.AddScoped<IChatbotService, ChatbotService>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromDays(1);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
 // Add CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", builder =>
     {
-        builder.AllowAnyOrigin()
+        builder.WithOrigins("http://localhost:5173")
+               .AllowAnyOrigin()
                .AllowAnyMethod()
                .AllowAnyHeader();
     });
@@ -69,7 +77,7 @@ if (app.Environment.IsDevelopment())
 // app.UseHttpsRedirection();
 
 app.UseCors("AllowAll");
-
+app.UseRouting();
 app.UseSession();
 
 app.UseAuthentication();
