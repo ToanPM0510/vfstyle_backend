@@ -105,44 +105,45 @@ namespace vfstyle_backend.Controllers
 
             return Ok(new { message = "Đăng ký thành công, email xác thực đã được gửi. Vui lòng kiểm tra hộp thư của bạn." });
         }
-        public class VerifyCodeRequest
-        {
-            [Required(ErrorMessage = "Mã xác thực là bắt buộc")]
-            public string VerifyCode { get; set; }
-        }
-        [HttpPost("verify")]
-        public async Task<IActionResult> VerifyCode([FromBody] VerifyCodeRequest request)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-            
-            var storedVerificationCode = _httpContextAccessor.HttpContext.Session.GetString("VerificationCode");
-            var storedAccount = _httpContextAccessor.HttpContext.Session.GetString("Account");
-            
-            if (string.IsNullOrEmpty(storedVerificationCode) || string.IsNullOrEmpty(storedAccount))
-            {
-                return BadRequest("Phiên xác thực đã hết hạn. Vui lòng đăng ký lại.");
-            }
-            
-            var account = JsonSerializer.Deserialize<Account>(storedAccount);
-            
-            if (verifyCode != storedVerificationCode)
-            {
-                return BadRequest("Mã xác minh không hợp lệ.");
-            }
+public class VerifyCodeRequest
+{
+    [Required(ErrorMessage = "Mã xác thực là bắt buộc")]
+    public string VerifyCode { get; set; }
+}
 
-            account.EmailVerified = true;
-            _context.Accounts.Add(account);
-            await _context.SaveChangesAsync();
+[HttpPost("verify")]
+public async Task<IActionResult> VerifyCode([FromBody] VerifyCodeRequest request)
+{
+    if (!ModelState.IsValid)
+    {
+        return BadRequest(ModelState);
+    }
+    
+    var storedVerificationCode = _httpContextAccessor.HttpContext.Session.GetString("VerificationCode");
+    var storedAccount = _httpContextAccessor.HttpContext.Session.GetString("Account");
+    
+    if (string.IsNullOrEmpty(storedVerificationCode) || string.IsNullOrEmpty(storedAccount))
+    {
+        return BadRequest("Phiên xác thực đã hết hạn. Vui lòng đăng ký lại.");
+    }
+    
+    var account = JsonSerializer.Deserialize<Account>(storedAccount);
+    
+    if (request.VerifyCode != storedVerificationCode)  // Sửa từ verifyCode thành VerifyCode
+    {
+        return BadRequest("Mã xác minh không hợp lệ.");
+    }
 
-            var token = await _authService.GenerateJwtToken(account, _context);
+    account.EmailVerified = true;
+    _context.Accounts.Add(account);
+    await _context.SaveChangesAsync();
 
-            _httpContextAccessor.HttpContext.Session.Clear();
+    var token = await _authService.GenerateJwtToken(account, _context);
 
-            return Ok(new { token, account });
-        }
+    _httpContextAccessor.HttpContext.Session.Clear();
+
+    return Ok(new { token, account });
+}
 
         [HttpPost("forgot-password")]
         public async Task<IActionResult> ForgotPassword([FromBody] ForgotDTO forgotDTO)
