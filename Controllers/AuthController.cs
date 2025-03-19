@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Threading.Tasks;
 using vfstyle_backend.Data;
@@ -10,7 +11,6 @@ using vfstyle_backend.DTOs;
 using vfstyle_backend.Helpers;
 using vfstyle_backend.Models;
 using vfstyle_backend.Services;
-
 namespace vfstyle_backend.Controllers
 {
     [Route("api/[controller]")]
