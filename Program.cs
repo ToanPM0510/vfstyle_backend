@@ -1,10 +1,3 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
-using vfstyle_backend.Data;
-using vfstyle_backend.Services;
-
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -31,9 +24,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
-    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.IdleTimeout = TimeSpan.FromDays(1); // Tăng thời gian timeout
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.None; // Thêm để support cross-origin
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // Bảo mật hơn
 });
 
 builder.Services.AddHttpContextAccessor();
@@ -46,20 +41,14 @@ builder.Services.AddScoped<IChatbotService, ChatbotService>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddDistributedMemoryCache();
-builder.Services.AddSession(options =>
-{
-    options.IdleTimeout = TimeSpan.FromDays(1);
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-});
+
 // Add CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", builder =>
     {
-        builder.WithOrigins("http://localhost:5173", "https://vfstyle.id.vn/")
-               .AllowAnyOrigin()
+        builder.WithOrigins("http://localhost:5173", "https://vfstyle.id.vn")
+               .AllowCredentials()
                .AllowAnyMethod()
                .AllowAnyHeader();
     });
@@ -70,20 +59,20 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-}
     app.UseSwagger();
     app.UseSwaggerUI();
+}
 
-// app.UseHttpsRedirection();
-
-app.UseCors("AllowAll");
-app.UseRouting();
-app.UseSession();
-
+// Đúng thứ tự middleware
+app.UseCors("AllowAll"); // CORS phải đứng trước Authentication
+app.UseSession(); // Session trước Authentication
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRouting();
 
 app.MapControllers();
+
+// Initialize Database
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -98,4 +87,5 @@ using (var scope = app.Services.CreateScope())
         logger.LogError(ex, "An error occurred while seeding the database.");
     }
 }
+
 app.Run();
