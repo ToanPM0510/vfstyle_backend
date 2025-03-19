@@ -70,11 +70,11 @@ if (app.Environment.IsDevelopment())
 }
 
 // Đúng thứ tự middleware
+app.UseRouting();
 app.UseCors("AllowAll"); // CORS phải đứng trước Authentication
 app.UseSession(); // Session trước Authentication
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseRouting();
 
 app.MapControllers();
 
